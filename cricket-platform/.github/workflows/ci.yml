@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Nx lint
+        run: npx nx run-many --target=lint --all --parallel=3
+
+      - name: Nx test
+        run: npx nx run-many --target=test --all --parallel=3
+
+      - name: Nx build
+        run: npx nx run-many --target=build --all --parallel=2
