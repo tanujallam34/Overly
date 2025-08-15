@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema for Cricket Platform - Phase 0 base models
+// Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -12,4 +9,119 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  leagues     League[]
+  teams       Team[]
+  players     Player[]
+  venues      Venue[]
+  users       User[]
+
+  @@index([name])
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String
+  passwordHash String
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Scope: for Phase 0 bind user to an org (multi-tenant)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+model League {
+  id            String   @id @default(cuid())
+  organizationId String
+  name          String
+  season        String
+  rulesetId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  teams        Team[]
+
+  @@index([organizationId])
+}
+
+model Team {
+  id            String   @id @default(cuid())
+  organizationId String
+  leagueId      String?
+  name          String
+  logoUrl       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  league       League?      @relation(fields: [leagueId], references: [id])
+  players      TeamPlayer[]
+
+  @@index([organizationId])
+  @@index([leagueId])
+}
+
+model Player {
+  id            String   @id @default(cuid())
+  organizationId String
+  name          String
+  dob           DateTime?
+  battingStyle  String?
+  bowlingStyle  String?
+  photoUrl      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  teams        TeamPlayer[]
+
+  @@index([organizationId])
+  @@index([name])
+}
+
+model TeamPlayer {
+  id        String   @id @default(cuid())
+  teamId    String
+  playerId  String
+  season    String?
+  shirtNumber Int?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team      Team   @relation(fields: [teamId], references: [id])
+  player    Player @relation(fields: [playerId], references: [id])
+
+  @@unique([teamId, playerId])
+  @@index([teamId])
+  @@index([playerId])
+}
+
+model Venue {
+  id            String   @id @default(cuid())
+  organizationId String
+  name          String
+  location      String?
+  pitchNotes    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([name])
 }
