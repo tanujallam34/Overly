@@ -39,6 +39,8 @@ model User {
   // Scope: for Phase 0 bind user to an org (multi-tenant)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
+  
+  assignments    Assignment[]
 
   @@index([organizationId])
 }
@@ -54,6 +56,7 @@ model League {
 
   organization Organization @relation(fields: [organizationId], references: [id])
   teams        Team[]
+  matches      Match[]
 
   @@index([organizationId])
 }
@@ -70,6 +73,13 @@ model Team {
   organization Organization @relation(fields: [organizationId], references: [id])
   league       League?      @relation(fields: [leagueId], references: [id])
   players      TeamPlayer[]
+  
+  homeMatches     Match[]    @relation("HomeMatches")
+  awayMatches     Match[]    @relation("AwayMatches")
+  wonMatches      Match[]    @relation("WonMatches")
+  battingInnings  Innings[]  @relation("BattingInnings")
+  bowlingInnings  Innings[]  @relation("BowlingInnings")
+  tossWins        Toss[]
 
   @@index([organizationId])
   @@index([leagueId])
@@ -88,6 +98,14 @@ model Player {
 
   organization Organization @relation(fields: [organizationId], references: [id])
   teams        TeamPlayer[]
+  
+  overs           Over[]
+  strikerBalls    BallEvent[]   @relation("StrikerBalls")
+  nonStrikerBalls BallEvent[]   @relation("NonStrikerBalls")
+  bowlerBalls     BallEvent[]   @relation("BowlerBalls")
+  dismissals      WicketEvent[] @relation("DismissedPlayer")
+  bowlerWickets   WicketEvent[] @relation("BowlerWickets")
+  fielderWickets  WicketEvent[] @relation("FielderWickets")
 
   @@index([organizationId])
   @@index([name])
@@ -121,7 +139,197 @@ model Venue {
   updatedAt     DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  matches      Match[]
 
   @@index([organizationId])
   @@index([name])
+}
+
+model Match {
+  id            String     @id @default(cuid())
+  leagueId      String?
+  homeTeamId    String
+  awayTeamId    String
+  venueId       String
+  startTime     DateTime
+  format        String     // T20, ODI, Test, T10, Custom
+  oversLimit    Int?       // null for Test matches
+  ballsPerOver  Int        @default(6)
+  status        String     @default("scheduled") // scheduled, live, completed, abandoned
+  resultType    String?    // win, tie, no-result, abandoned
+  winnerTeamId  String?
+  winMargin     Int?       // runs or wickets
+  winType       String?    // runs, wickets, tie
+  targetRuns    Int?       // for chase innings
+  dlsUsed       Boolean    @default(false)
+  rulesetId     String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  league        League?    @relation(fields: [leagueId], references: [id])
+  homeTeam      Team       @relation("HomeMatches", fields: [homeTeamId], references: [id])
+  awayTeam      Team       @relation("AwayMatches", fields: [awayTeamId], references: [id])
+  venue         Venue      @relation(fields: [venueId], references: [id])
+  winner        Team?      @relation("WonMatches", fields: [winnerTeamId], references: [id])
+  
+  innings       Innings[]
+  toss          Toss?
+  assignments   Assignment[]
+
+  @@index([leagueId])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([venueId])
+  @@index([startTime])
+  @@index([status])
+}
+
+model Toss {
+  id            String   @id @default(cuid())
+  matchId       String   @unique
+  winnerTeamId  String
+  decision      String   // bat, bowl
+  createdAt     DateTime @default(now())
+
+  match         Match    @relation(fields: [matchId], references: [id])
+  winnerTeam    Team     @relation(fields: [winnerTeamId], references: [id])
+
+  @@index([matchId])
+}
+
+model Assignment {
+  id            String   @id @default(cuid())
+  matchId       String
+  role          String   // scorer, umpire, captain
+  userId        String
+  createdAt     DateTime @default(now())
+
+  match         Match    @relation(fields: [matchId], references: [id])
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@unique([matchId, role, userId])
+  @@index([matchId])
+  @@index([userId])
+}
+
+model Innings {
+  id            String     @id @default(cuid())
+  matchId       String
+  number        Int        // 1, 2, 3, 4 (for Test matches)
+  battingTeamId String
+  bowlingTeamId String
+  targetRuns    Int?       // for chase innings
+  totalRuns     Int        @default(0)
+  totalWickets  Int        @default(0)
+  totalOvers    Decimal    @default(0) @db.Decimal(4,1) // 19.4 overs
+  extras        Int        @default(0)
+  isDeclared    Boolean    @default(false)
+  isCompleted   Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  match         Match      @relation(fields: [matchId], references: [id])
+  battingTeam   Team       @relation("BattingInnings", fields: [battingTeamId], references: [id])
+  bowlingTeam   Team       @relation("BowlingInnings", fields: [bowlingTeamId], references: [id])
+  
+  overs         Over[]
+  ballEvents    BallEvent[]
+  wicketEvents  WicketEvent[]
+  powerplays    Powerplay[]
+
+  @@unique([matchId, number])
+  @@index([matchId])
+  @@index([battingTeamId])
+  @@index([bowlingTeamId])
+}
+
+model Over {
+  id            String     @id @default(cuid())
+  inningsId     String
+  number        Int
+  bowlerId      String
+  legalBalls    Int        @default(0)
+  runs          Int        @default(0)
+  wickets       Int        @default(0)
+  extras        Int        @default(0)
+  isCompleted   Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  innings       Innings    @relation(fields: [inningsId], references: [id])
+  bowler        Player     @relation(fields: [bowlerId], references: [id])
+  
+  ballEvents    BallEvent[]
+
+  @@unique([inningsId, number])
+  @@index([inningsId])
+  @@index([bowlerId])
+}
+
+model BallEvent {
+  id            String      @id @default(cuid())
+  inningsId     String
+  overNumber    Int
+  ballNumber    Int         // 1, 2, 3, 4, 5, 6 (legal balls only)
+  sequenceIndex Int         // includes extras: 1, 2, 3, 3, 4, 5... 
+  strikerId     String
+  nonStrikerId  String
+  bowlerId      String
+  runsOffBat    Int         @default(0)
+  extras        Json        @default("{}") // {wide: 0, noBall: 0, bye: 0, legBye: 0, penalty: 0}
+  boundary      String?     // four, six
+  freeHit       Boolean     @default(false)
+  commentary    String?
+  timestamp     DateTime    @default(now())
+  createdAt     DateTime    @default(now())
+
+  innings       Innings     @relation(fields: [inningsId], references: [id])
+  over          Over        @relation(fields: [inningsId, overNumber], references: [inningsId, number])
+  striker       Player      @relation("StrikerBalls", fields: [strikerId], references: [id])
+  nonStriker    Player      @relation("NonStrikerBalls", fields: [nonStrikerId], references: [id])
+  bowler        Player      @relation("BowlerBalls", fields: [bowlerId], references: [id])
+  
+  wicketEvent   WicketEvent?
+
+  @@unique([inningsId, overNumber, sequenceIndex])
+  @@index([inningsId])
+  @@index([strikerId])
+  @@index([bowlerId])
+  @@index([timestamp])
+}
+
+model WicketEvent {
+  id                String    @id @default(cuid())
+  ballEventId       String    @unique
+  inningsId         String
+  type              String    // bowled, caught, lbw, runOut, stumped, hitWicket, handledBall, timedOut, retiredOut
+  dismissedPlayerId String
+  bowlerId          String?
+  fielderId         String?
+  runOutEnd         String?   // striker, nonStriker
+  battersCrossed    Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+
+  ballEvent         BallEvent @relation(fields: [ballEventId], references: [id])
+  innings           Innings   @relation(fields: [inningsId], references: [id])
+  dismissedPlayer   Player    @relation("DismissedPlayer", fields: [dismissedPlayerId], references: [id])
+  bowler            Player?   @relation("BowlerWickets", fields: [bowlerId], references: [id])
+  fielder           Player?   @relation("FielderWickets", fields: [fielderId], references: [id])
+
+  @@index([inningsId])
+  @@index([dismissedPlayerId])
+  @@index([bowlerId])
+}
+
+model Powerplay {
+  id            String   @id @default(cuid())
+  inningsId     String
+  startOver     Int
+  endOver       Int?
+  type          String   // mandatory, batting, bowling
+  createdAt     DateTime @default(now())
+
+  innings       Innings  @relation(fields: [inningsId], references: [id])
+
+  @@index([inningsId])
 }
